@@ -194,9 +194,21 @@ export default function GameMap(props) {
     const gridSize = canvasSize / 11;
     const x = Math.floor((e.offsetX - gridSize) / gridSize);
     const y = Math.floor((e.offsetY - gridSize) / gridSize);
+
+    setNewShip((coords) => new Set([...coords, `${x},${y}`]));
   };
-  const handlerMouseMove = (e) => {};
-  const handlerMouseUp = (e) => {};
+  const handlerMouseMove = (e) => {
+    const gridSize = canvasSize / 11;
+    const x = Math.floor((e.offsetX - gridSize) / gridSize);
+    const y = Math.floor((e.offsetY - gridSize) / gridSize);
+
+    if (!newShip.has(`${x},${y}`)) {
+      setNewShip((coords) => new Set([...coords, `${x},${y}`]));
+    }
+  };
+  const handlerMouseUp = (e) => {
+    // setYourShips()
+  };
   const handlerReady = (e) => {
     setGameStatus('Ready, waiting on opponent...');
   };
