@@ -3,18 +3,24 @@ import { useEffect, useRef, useState } from 'react';
 export default function GameMap(props) {
   const yourRef = useRef();
   const opponentRef = useRef();
-  const [canvasSize, setCanvasSize] = useState(600);
-  const [gameStatus, setGameStatus] = useState('Placing your pieces...');
-  const [newShip, setNewShip] = useState(new Set());
+  const [canvasSize, setCanvasSize] = useState(350);
+  const newShipRef = useRef(new Set());
 
   useEffect(() => {
-    if (gameStatus === 'Placing your pieces...') {
-      const yourCanvas = yourRef.current;
+    const yourCanvas = yourRef.current;
+    if (props.gameStatus === 'Place your pieces...') {
       yourCanvas.addEventListener('mousedown', handlerMouseDown);
-      yourCanvas.addEventListener('mousemove', handlerMouseMove);
       yourCanvas.addEventListener('mouseup', handlerMouseUp);
+    } else {
+      yourCanvas.removeEventListener('mousedown', handlerMouseDown);
+      yourCanvas.removeEventListener('mouseup', handlerMouseUp);
     }
-  }, [gameStatus]);
+
+    return () => {
+      yourCanvas.removeEventListener('mousedown', handlerMouseDown);
+      yourCanvas.removeEventListener('mouseup', handlerMouseUp);
+    };
+  }, [props.gameStatus]);
 
   useEffect(() => {
     const yourCanvas = yourRef.current;
@@ -26,7 +32,7 @@ export default function GameMap(props) {
       const [xString, yString] = guess.split(',');
       const x = parseInt(xString);
       const y = parseInt(yString);
-      if (checkGuess(x, y)) {
+      if (checkGuess(props.yourShips, x, y)) {
         drawHit(yourRef.current, x, y);
       } else {
         drawMiss(yourRef.current, x, y);
@@ -39,7 +45,7 @@ export default function GameMap(props) {
       const [xString, yString] = guess.split(',');
       const x = parseInt(xString);
       const y = parseInt(yString);
-      if (checkGuess(x, y)) {
+      if (checkGuess(props.opponentShips, x, y)) {
         drawHit(opponentRef.current, x, y);
       } else {
         drawMiss(opponentRef.current, x, y);
@@ -56,8 +62,8 @@ export default function GameMap(props) {
     };
   });
 
-  const checkGuess = (x, y) => {
-    for (let ship of props.opponentShips) {
+  const checkGuess = (ships, x, y) => {
+    for (let ship of ships) {
       if (x >= ship.coordinates[0][0] && x <= ship.coordinates[1][0]) {
         if (y >= ship.coordinates[0][1] && y <= ship.coordinates[1][1]) {
           return true;
@@ -195,28 +201,74 @@ export default function GameMap(props) {
     const x = Math.floor((e.offsetX - gridSize) / gridSize);
     const y = Math.floor((e.offsetY - gridSize) / gridSize);
 
-    setNewShip((coords) => new Set([...coords, `${x},${y}`]));
+    newShipRef.current = new Set([`${x},${y}`]);
   };
-  const handlerMouseMove = (e) => {
+  const handlerMouseUp = (e) => {
     const gridSize = canvasSize / 11;
     const x = Math.floor((e.offsetX - gridSize) / gridSize);
     const y = Math.floor((e.offsetY - gridSize) / gridSize);
+    if (!newShipRef.current.has(`${x},${y}`)) {
+      newShipRef.current = new Set([...newShipRef.current, `${x},${y}`]);
+    }
 
-    if (!newShip.has(`${x},${y}`)) {
-      setNewShip((coords) => new Set([...coords, `${x},${y}`]));
+    let ship = null;
+    let minX = null;
+    let maxX = null;
+    let minY = null;
+    let maxY = null;
+    for (let coord of newShipRef.current) {
+      const [xString, yString] = coord.split(',');
+      const x = parseInt(xString);
+      const y = parseInt(yString);
+      if (minX === null || x < minX) {
+        minX = x;
+      }
+      if (maxX === null || x > maxX) {
+        maxX = x;
+      }
+      if (minY === null || y < minY) {
+        minY = y;
+      }
+      if (maxY === null || y > maxY) {
+        maxY = y;
+      }
+    }
+    if (minX === maxX || minY === maxY) {
+      ship = {
+        name: 'Battleship',
+        coordinates: [
+          [minX, minY],
+          [maxX, maxY],
+        ],
+      };
+    }
+    if (ship !== null) {
+      props.setYourShips((oldShips) => [...oldShips, ship]);
+      newShipRef.current = new Set();
+    } else {
+      alert('Invalid ship!');
     }
   };
-  const handlerMouseUp = (e) => {
-    // setYourShips()
-  };
   const handlerReady = (e) => {
-    setGameStatus('Ready, waiting on opponent...');
+    if (props.gameStatus === 'Place your pieces...') {
+      if (props.yourShips.length > 0) {
+        props.setGameStatus('Ready');
+        props.presenceChannel.current.trigger('client-send_ships', { ships: props.yourShips });
+        props.presenceChannel.current.trigger('client-send_status', { status: 'Ready, waiting on opponent...' });
+      } else {
+        alert('You have no pieces set!');
+      }
+    }
+    if (props.gameStatus === 'Ready') {
+      props.presenceChannel.current.trigger('client-send_status', { status: 'Game Started' });
+      props.setGameStatus('Game Started');
+    }
   };
 
   return (
     <div>
       <h2>GameMap</h2>
-      <div>Game Status: {gameStatus}</div>
+      <div>Game Status: {props.gameStatus}</div>
       <div style={{ display: 'flex-row' }}>
         <div style={{ width: '40%', display: 'inline-block' }}>
           <h3>Your Board</h3>
@@ -227,7 +279,15 @@ export default function GameMap(props) {
           <canvas id='opponent' ref={opponentRef} width={`${canvasSize}px`} height={`${canvasSize}px`} style={{ border: '1px solid black' }} />
         </div>
       </div>
-      {gameStatus === 'Placing your pieces...' && <button onClick={handlerReady}>Ready</button>}
+      {props.gameStatus === 'Place your pieces...' && <button onClick={handlerReady}>Ready</button>}
+      {props.gameStatus === 'Ready' && props.presenceChannel.current.members.me.id === props.player1 && <button onClick={handlerReady}>Start</button>} {/* TODO: Add condition to check if player is first player for start */}
+      <button
+        onClick={() => {
+          console.log(props.opponentShips);
+        }}
+      >
+        Debug
+      </button>
     </div>
   );
 }
